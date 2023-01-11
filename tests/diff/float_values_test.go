@@ -90,16 +90,16 @@ func TestFloatValues(t *testing.T) {
 		t.Parallel()
 
 		for name, tc := range map[string]struct {
-			filter   bson.D
-			insert   bson.D
-			update   bson.D
-			expected mongo.CommandError
+			filter      bson.D
+			insert      bson.D
+			update      bson.D
+			expectedErr mongo.CommandError
 		}{
 			"MulMaxFloat64": {
 				filter: bson.D{{"_id", "number"}},
 				insert: bson.D{{"_id", "number"}, {"v", int32(42)}},
 				update: bson.D{{"$mul", bson.D{{"v", math.MaxFloat64}}}},
-				expected: mongo.CommandError{
+				expectedErr: mongo.CommandError{
 					Code:    2,
 					Name:    "BadValue",
 					Message: `invalid value: { "v": +Inf } (infinity values are not allowed)`,
@@ -130,5 +130,36 @@ func TestFloatValues(t *testing.T) {
 				})
 			})
 		}
+	})
+
+	t.Run("UpdateOneMul", func(t *testing.T) {
+		t.Parallel()
+
+		filter := bson.D{{"_id", "number1"}}
+
+		collection := db.Collection("update-one-mul")
+		_, err := collection.InsertOne(ctx, bson.D{{"_id", "number1"}, {"v", float64(-123456789)}})
+		require.NoError(t, err)
+
+		_, err = collection.UpdateOne(ctx, filter, bson.D{{"$mul", bson.D{{"v", float64(0)}}}})
+		require.NoError(t, err)
+
+		var updated bson.D
+		err = collection.FindOne(ctx, filter).Decode(&updated)
+		require.NoError(t, err)
+
+		expected := bson.D{{"_id", "number1"}, {"v", math.Copysign(0.0, -1)}}
+
+		t.Run("FerretDB", func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, expected, updated)
+		})
+
+		t.Run("MongoDB", func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, expected, updated)
+		})
 	})
 }
